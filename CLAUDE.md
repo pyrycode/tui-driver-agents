@@ -1,6 +1,10 @@
-# Pyrycode Dispatcher — Working Notes
+# tui-driver Agents — Working Notes
 
-This is the agent-prompts + dispatcher-launcher repo. The Go source for the binary lives in the parent (`pyrycode/`). As of 2026-05-09 the dispatcher source itself lives in [`pyrycode/agent-dispatcher`](https://github.com/pyrycode/agent-dispatcher) — a separate repo consumed via git submodule at `dispatcher/`. This repo holds the per-agent CLAUDE.md prompts (architect/, developer/, code-review/, documentation/, po/), the `bin/` launcher scripts, and the `.env` config that drives the dispatcher against the pyrycode board.
+This is the agent-prompts + dispatcher-launcher repo for the [pyrycode/tui-driver](https://github.com/pyrycode/tui-driver) project (Go library for PTY-driving interactive `claude` CLI sessions). The target Go source lives in a sibling clone at `../tui-driver/`. The dispatcher source lives in [`pyrycode/agent-dispatcher`](https://github.com/pyrycode/agent-dispatcher) — a separate repo consumed via git submodule at `dispatcher/`, shared identically across all pyrycode-org agent forks (`pyrycode/agents`, `pyrycode-mobile-agents`, `pyrycode-relay-agents`, this one).
+
+This repo holds the per-agent CLAUDE.md prompts (architect/, developer/, code-review/, documentation/, po/), the `bin/` launcher scripts, and the `.env` config that drives the dispatcher against the tui-driver project board.
+
+Forked from `pyrycode/agents@00b6ef3` on 2026-05-16. Sync flows back from upstream per [vault: Agent Fork Sync Procedure](https://github.com/pyrycode/agents/blob/main/CLAUDE.md) — dispatcher submodule bumps propagate immediately (Flow A); prompt syncs are cherry-picked manually (Flow B). tui-driver targets Go, same as the upstream pyrycode core, so prompt adaptations should be minimal — mostly just paths and project-naming.
 
 ## Dispatcher source layout
 
