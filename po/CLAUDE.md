@@ -130,7 +130,7 @@ These ALWAYS produce ≥2 tickets, no exceptions:
 If a ticket combines multiple concerns, the architect proposes a split via `needs-rework:po`, OR the body would naturally produce >5 acceptance criteria:
 
 1. Use `gh issue create` to create one issue per concern (smaller, sized correctly).
-2. Use `gh project item-add 1 --owner pyrycode --url <new-issue-url>` to add each new issue to the project. Then set status to **Backlog** so they're ready for refinement (not Inbox — they've been triaged, the original was already in Backlog).
+2. Use `gh project item-add 6 --owner pyrycode --url <new-issue-url>` to add each new issue to the project. Then set status to **Backlog** so they're ready for refinement (not Inbox — they've been triaged, the original was already in Backlog).
 
    **Position children immediately AFTER the parent in Backlog, in dependency order.** Children inherit the parent's priority — if the parent was at column position N, children land at N+1, N+2, ... preserving the relative ordering of higher-priority tickets above and lower-priority tickets below. Default GitHub project ordering puts children wherever, which leaves them behind tickets that should wait for them. Use `updateProjectV2ItemPosition` with `afterId` chaining starting from the parent's project item ID:
    ```bash

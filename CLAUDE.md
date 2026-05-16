@@ -25,7 +25,7 @@ Cross-file deps form a clean DAG: pipeline-decisions → blockers; dispatch-sele
 
 ## Use codegraph for dispatcher-side reading
 
-`pyrycode/agents/` is indexed for codegraph (`.codegraph/`, gitignored). Default to `mcp__codegraph__codegraph_*` MCP tools for symbol-level questions before reaching for grep:
+`pyrycode/tui-driver-agents/` is indexed for codegraph (`.codegraph/`, gitignored). Default to `mcp__codegraph__codegraph_*` MCP tools for symbol-level questions before reaching for grep:
 
 - **Before changing or removing any exported function** — run `codegraph_callers <name>` to find the call sites across `dispatch.ts`, `reconcile.ts`, sibling lib files, and the test files. The dispatcher's pure-function decomposition means a "small" rename typically fans out to 3–5 sites.
 - **Before extending `dispatch.ts` with a new post-run handler** — run `codegraph_callees <name>` against neighbouring handlers (`decidePostRunLabels`, `runAutoAdvance`, `runReworkRouting`) to mirror their shape.
@@ -35,7 +35,7 @@ The same fall-back rules apply as in agent CLAUDE.mds: use grep/Read for comment
 
 **Re-index when finished:** the dispatcher's worktree symlink (`decideCodegraphSymlink` in `worktree.ts`) points spawned agents at the canonical `.codegraph/`. After a substantive change to dispatcher source, run `codegraph index -f` from `agents/` so the next dispatcher run sees the new symbols. (`codegraph sync` doesn't always pick up changes — confirmed 2026-05-09.)
 
-**Querying from a different cwd (e.g. the vault):** the codegraph MCP tools accept a `projectPath` argument — pass `/Users/<you>/Workspace/Projects/pyrycode/agents` to query the dispatcher from any session, regardless of where Claude Code was launched. Without `projectPath` the MCP server falls back to CWD, which usually isn't the project root.
+**Querying from a different cwd (e.g. the vault):** the codegraph MCP tools accept a `projectPath` argument — pass `/Users/<you>/WorkSpace/Projects/tui-driver-agents` to query the dispatcher from any session, regardless of where Claude Code was launched. Without `projectPath` the MCP server falls back to CWD, which usually isn't the project root.
 
 ## Test-first
 
