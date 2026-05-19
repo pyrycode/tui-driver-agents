@@ -106,15 +106,130 @@ If the ticket does NOT have the `security-sensitive` label, skip this section en
 - **SHOULD FIX** — 3 or more SHOULD FIX findings = FAIL. Naming violations, missing test cases, unclear error messages, logging at wrong level.
 - **NIT** — style suggestions. Never blocks merge.
 
+## e2e harness gate (path-filtered, additive)
+
+This gate runs `make e2e` against the PR's checked-out worktree when the diff touches library, spike/probe, harness-runner, Makefile, or version-lock files. It is **additive** to the existing review pass — the per-diff review still happens regardless. The gate is intentionally redundant with the push-to-main GitHub Actions workflow at `.github/workflows/e2e.yml` (#40): that workflow is the deterministic backstop, this gate is the pre-merge visibility layer. See `docs/knowledge/features/e2e-harness.md` for the harness itself. Step 1 of the **Workflow** section below is the trigger; this section is the reference. On a non-library PR (no path-filter match) the gate skips entirely and the existing review runs unchanged.
+
+**Include list.** A file path matches if it starts with one of these prefixes (or, for the last two, equals them exactly):
+
+- `pkg/tuidriver/` (library code and `pkg/tuidriver/testdata/` snapshot fixtures)
+- `cmd/spike-` (any `cmd/spike-<name>/` directory)
+- `cmd/probe-` (any `cmd/probe-<name>/` directory)
+- `cmd/e2e-runner/`
+- `cmd/e2e-snapshot-check/`
+- `Makefile` (exact match)
+- `claude-version.lock` (exact match)
+
+This is a **prefix include**, not an exclude — new files at unfamiliar paths default to "no e2e" rather than "run e2e." Doc-only PRs (README, `docs/**`, other `*.md`) skip the gate.
+
+**Path-filter command.** Use this exact pipeline — `gh pr diff … --name-only` is deterministic on a fresh checkout (no dependence on local merge-base resolution):
+
+```bash
+if gh pr diff "$PR_NUMBER" --name-only \
+   | grep -qE '^(pkg/tuidriver/|cmd/spike-|cmd/probe-|cmd/e2e-runner/|cmd/e2e-snapshot-check/|Makefile$|claude-version\.lock$)'; then
+  # at least one matching file → run make e2e, classify outcome
+  make e2e
+else
+  # no matching file → skip gate, proceed to existing review
+  :
+fi
+```
+
+`grep -qE` exits 0 (silent) if any line matches; exits 1 otherwise. The `$` anchors on `Makefile` and `claude-version.lock` guard against `Makefile.in` or `claude-version.lock.bak` accidentally triggering the gate.
+
+**Decision table.** Classify the `make e2e` outcome by combining the process exit code with the presence and shape of `e2e-report.json` (the runner's invariant per `docs/knowledge/features/e2e-harness.md:179` is "the report always emits when feasible"):
+
+| Observed | Classification | Routing |
+|---|---|---|
+| exit 0 | **green** | proceed to existing review with no special callout |
+| exit ≠ 0 AND `e2e-report.json` exists AND parses AND `.checks[]` has ≥1 entry with `status ∈ {"fail","timeout"}` | **red (check failure)** | post `--request-changes` review with the red comment block prepended; add `needs-rework:developer` label; existing line-by-line review still happens below the red block |
+| exit ≠ 0 AND (`e2e-report.json` missing OR unparseable OR empty `.checks[]`) | **infra failure** | post `--comment` review with the infra-failure block prepended; do NOT add `needs-rework:developer` from the gate (the per-diff review decides FAIL/PASS independently); existing line-by-line review still happens below the block |
+
+Failing-check name extraction (deterministic primitive):
+
+```bash
+jq -r '.checks[] | select(.status=="fail" or .status=="timeout") | .name' e2e-report.json | paste -sd ', ' -
+```
+
+If `e2e-report.json` is missing or `jq` errors, the run classifies as infra-failure.
+
+**Token-redaction step (required, security-sensitive).** Before extracting the 5-line stdout/stderr tail for the red comment, filter the captured combined log through this `sed` pipeline. `pyrycode/tui-driver` is a public repo and a malicious spike could deliberately print `ANTHROPIC_API_KEY=…` to stderr to exfiltrate the credential via the comment; this redaction makes that channel structurally hard even though the developer agent is trusted today:
+
+```bash
+sed -E \
+  -e 's/(sk-ant-[A-Za-z0-9_-]{10,})/[REDACTED-ANTHROPIC-KEY]/g' \
+  -e 's/(ghp_[A-Za-z0-9]{36,})/[REDACTED-GITHUB-TOKEN]/g' \
+  -e 's/(ghs_[A-Za-z0-9]{36,})/[REDACTED-GITHUB-TOKEN]/g' \
+  -e 's/(ANTHROPIC_API_KEY=[^[:space:]]+)/ANTHROPIC_API_KEY=[REDACTED]/g' \
+  -e 's/(GITHUB_TOKEN=[^[:space:]]+)/GITHUB_TOKEN=[REDACTED]/g' \
+  < captured.log | tail -n 5
+```
+
+**Red comment template.** Single review with `--request-changes`. Body:
+
+````
+❌ **e2e harness FAILED**
+
+Failing check(s): <name1>, <name2>, …
+
+Last 5 lines of `make e2e` stdout/stderr:
+
+```
+<tail line 1>
+<tail line 2>
+<tail line 3>
+<tail line 4>
+<tail line 5>
+```
+
+---
+
+(then the existing line-by-line review findings, formatted per § "Output")
+````
+
+Submit:
+
+```bash
+gh pr review <PR-number> --request-changes --body-file review.md --repo pyrycode/tui-driver
+gh issue edit <ticket-number> --add-label needs-rework:developer --repo pyrycode/tui-driver
+```
+
+Both are required on a red e2e — see § "Mechanical contract" below.
+
+**Infra-failure comment template.** Single review with `--comment` (NOT `--request-changes`). Body:
+
+```
+⚠️ **e2e harness could not run — see review log**
+
+The harness gate ran `make e2e` against this PR but could not produce a verdict. Likely causes: missing `claude` install on the runner, MCP-startup hang before any check completed, or a runner-level failure that prevented `e2e-report.json` from being written. The existing line-by-line review still applies.
+
+(Mention specific anomaly if visible: e.g. "no e2e-report.json produced after 10m wall budget" or "make: command not found".)
+
+---
+
+(then the existing line-by-line review findings)
+```
+
+Submit:
+
+```bash
+gh pr review <PR-number> --comment --body-file review.md --repo pyrycode/tui-driver
+```
+
+The agent does NOT add `needs-rework:developer` from an infra-failure verdict alone; the per-diff review decides FAIL/PASS independently.
+
+**Wall budget.** `make e2e` defaults to a 10-minute wall budget (`-wall 10m`). Use `Bash` with `timeout` set high enough to cover that — a healthy-but-slow run shouldn't be killed by the agent. If the runner hangs and consumes the full 10 minutes, the gate burns one turn; that's accepted.
+
 ## Workflow
 
-1. Run `gh pr diff <number>` to get the full diff
-2. Read affected files in full (not just the diff) for surrounding context
-3. Check that `go vet`, `staticcheck`, and `go test -race` pass (CI should confirm)
-4. Write findings as PR comments with line references
-5. Make the PASS/FAIL decision
-6. **If FAIL: run `gh issue edit <ticket-number> --add-label needs-rework:developer --repo pyrycode/tui-driver` BEFORE returning.** The *label* is what the dispatcher reads to route the ticket back to the developer. The "Decision: FAIL" line in your PR comment is for humans only — without the label, the dispatcher treats the run as a pass, applies `done:code-review`, and auto-advances broken work to the Documentation column. This is non-negotiable; see "Mechanical contract" below.
-7. **If PASS: do nothing label-wise.** The dispatcher applies `done:code-review` automatically when no `needs-rework:*` label is present.
+1. **Run the e2e harness gate (see § "e2e harness gate" above).** If `gh pr diff <number> --name-only` produces NO line matching the include-list regex, skip the gate and proceed to step 2 unchanged. If at least one line matches, run `make e2e` from your worktree root; classify the outcome per the decision table; capture the verdict block for prepending to your review body in step 5. The gate's verdict (red / green / infra-failure) is **independent of and composes with** the per-diff review verdict — both must be green for the overall review to PASS.
+2. Run `gh pr diff <number>` to get the full diff
+3. Read affected files in full (not just the diff) for surrounding context
+4. Check that `go vet`, `staticcheck`, and `go test -race` pass (CI should confirm)
+5. Write findings as PR comments with line references — **prepend the e2e gate's verdict block from step 1 if it produced one (red or infra-failure)**
+6. Make the PASS/FAIL decision. **A red e2e gate is itself a FAIL regardless of the per-diff review findings.**
+7. **If FAIL: run `gh issue edit <ticket-number> --add-label needs-rework:developer --repo pyrycode/tui-driver` BEFORE returning.** The *label* is what the dispatcher reads to route the ticket back to the developer. The "Decision: FAIL" line in your PR comment is for humans only — without the label, the dispatcher treats the run as a pass, applies `done:code-review`, and auto-advances broken work to the Documentation column. This is non-negotiable; see "Mechanical contract" below.
+8. **If PASS: do nothing label-wise.** The dispatcher applies `done:code-review` automatically when no `needs-rework:*` label is present.
 
 ## Output
 
@@ -145,7 +260,9 @@ If FAIL: explain what needs to change before re-review.
 The dispatcher does NOT parse your PR comment. It reads GitHub labels. The full contract:
 
 - **PASS path:** no label changes from you. Dispatcher checks for `needs-rework:*`, finds none, applies `done:code-review`, auto-advances to In Documentation.
-- **FAIL path:** YOU add `needs-rework:developer` (per Workflow step 6). Dispatcher sees it, skips `done:code-review`, routes the ticket back to the developer column.
+- **FAIL path:** YOU add `needs-rework:developer` (per Workflow step 7). Dispatcher sees it, skips `done:code-review`, routes the ticket back to the developer column.
+- **Red e2e path:** the gate produced `❌ e2e harness FAILED`. Treated identically to a FAIL — you add `needs-rework:developer` per Workflow step 7. The GitHub-level review action is `--request-changes` (per #33 AC2), but the label is still what the dispatcher reads. The `--request-changes` action without the label still auto-advances the ticket; the label without `--request-changes` is enough for the dispatcher but loses the GitHub-side signal. **Both are required on a red e2e.**
+- **Infra-failure e2e path:** the gate produced "e2e harness could not run". This is NOT a FAIL on its own — the gate could not produce a verdict, so the per-diff review's verdict alone decides PASS/FAIL. The GitHub-level review action is `--comment` (not `--request-changes`). If your per-diff review otherwise PASSes, do nothing label-wise (the dispatcher auto-applies `done:code-review`). If your per-diff review FAILs, add `needs-rework:developer` as usual.
 
 If you write "Decision: FAIL" in the comment but don't add the label, **the ticket auto-advances anyway** — the comment is invisible to the dispatcher. This isn't a soft expectation; it's the contract.
 
