@@ -153,6 +153,110 @@ jq -r '.checks[] | select(.status=="fail" or .status=="timeout") | .name' e2e-re
 
 If `e2e-report.json` is missing or `jq` errors, the run classifies as infra-failure.
 
+**Baseline-comparison for red runs (mandatory on red, deterministic).** When the PR-branch `make e2e` classifies as **red (check failure)**, do NOT immediately route to `needs-rework:developer`. Instead, re-run `make e2e` against the PR's merge-base in a temporary worktree, then classify each failing check as `regression` (passed on baseline, failed on PR) or `pre_existing` (failed on both). Routing depends on the partition.
+
+This is the deterministic safety net for the out-of-scope question. The dispatcher's previous contract — "any red is rework" — meant that PRs which correctly fix one thing while unmasking pre-existing fragility elsewhere (cf. #57 and #64) burned 3+ rework cycles. The baseline run answers "did THIS PR introduce these failures?" mechanically, with no diff-reasoning or call-graph guessing required.
+
+**Baseline-run procedure.** Run this AFTER the initial `make e2e` and BEFORE token-redaction / comment-templating. Skip the entire block if `make e2e` was green or infra-failure (only red triggers it).
+
+```bash
+# 1. Extract PR-side failing check names, sorted unique.
+PR_FAILS=$(jq -r '.checks[] | select(.status=="fail" or .status=="timeout") | .name' e2e-report.json | sort -u)
+if [ -z "$PR_FAILS" ]; then
+  # Defensive: red without failing names should never happen (the decision
+  # table classifies this as infra-failure), but if it does, fall through
+  # to the standard red routing.
+  :
+else
+  # 2. Resolve baseline ref. The dispatcher's worktree branches from main;
+  # the merge-base captures "where this PR diverged from main."
+  BASELINE_REF=$(git merge-base HEAD origin/main 2>/dev/null)
+  if [ -z "$BASELINE_REF" ]; then
+    # Couldn't resolve merge-base — proceed as standard red (safer to
+    # over-rework than to file a false bug ticket).
+    echo "baseline: merge-base unresolved; routing as standard red" >&2
+  else
+    # 3. Create a clean detached worktree at the baseline.
+    BASELINE_DIR=$(mktemp -d -t baseline-e2e-XXXXXX)
+    if ! git worktree add --detach "$BASELINE_DIR" "$BASELINE_REF" >/dev/null 2>&1; then
+      echo "baseline: worktree add failed; routing as standard red" >&2
+    else
+      # 4. Run make e2e in the baseline worktree. Failures here are
+      # acceptable — they're what we want to detect.
+      (cd "$BASELINE_DIR" && make e2e) || true
+      BASELINE_REPORT="$BASELINE_DIR/e2e-report.json"
+      if [ -f "$BASELINE_REPORT" ]; then
+        BASELINE_FAILS=$(jq -r '.checks[] | select(.status=="fail" or .status=="timeout") | .name' "$BASELINE_REPORT" | sort -u)
+
+        # 5. Partition into regression vs pre_existing.
+        # comm -23: lines in $PR_FAILS but not in $BASELINE_FAILS (= regressions, PR caused them)
+        # comm -12: lines in both (= pre_existing, PR did not cause them)
+        REGRESSIONS=$(comm -23 <(echo "$PR_FAILS") <(echo "$BASELINE_FAILS"))
+        PRE_EXISTING=$(comm -12 <(echo "$PR_FAILS") <(echo "$BASELINE_FAILS"))
+      else
+        echo "baseline: report not produced; routing as standard red" >&2
+        REGRESSIONS="$PR_FAILS"
+        PRE_EXISTING=""
+      fi
+      # 6. Clean up the baseline worktree (always — leaks rot the dispatcher's worktree list).
+      git worktree remove --force "$BASELINE_DIR" >/dev/null 2>&1 || true
+    fi
+  fi
+fi
+```
+
+**Routing after baseline-comparison.** Three cases:
+
+1. **`REGRESSIONS` non-empty** → at least one failing check passed on the baseline but fails on this PR. The PR caused at least one new failure. Route as standard red: add `needs-rework:developer`, post the `--request-changes` review with the standard red template. Mention the specific regression names in the review. If `PRE_EXISTING` is also non-empty, mention those too but they are NOT the developer's job; flag them as "pre-existing, separate bug ticket to follow after rework lands."
+
+2. **`REGRESSIONS` empty AND `PRE_EXISTING` non-empty** → ALL failing checks fail on the baseline too. The PR did not introduce them. Route as out-of-scope: file a bug ticket on board #6 for the `PRE_EXISTING` set, add `done:code-review` (NOT `needs-rework:developer`), post `--comment` review using the out-of-scope-red template below.
+
+3. **Baseline couldn't run** (merge-base unresolved, worktree add failed, baseline report missing) → fall back to standard red routing (`needs-rework:developer`). The deterministic gate failed; default to safe behaviour.
+
+**Out-of-scope-red comment template** (case 2). Single review with `--comment`. Body:
+
+````
+⚠️ **e2e harness RED — pre-existing failures (PR did not cause them)**
+
+Failing check(s): <PR_FAILS, comma-separated>
+
+Baseline-comparison verdict (run against `git merge-base HEAD origin/main`):
+- Regressions introduced by this PR: **none**
+- Pre-existing failures (fail on both baseline AND PR branch): <PRE_EXISTING, comma-separated>
+
+Per-diff verdict: PASS.
+
+Filed as separate bug ticket: #<NEW>
+
+---
+
+(then the existing line-by-line review findings, formatted per § "Output")
+````
+
+**Out-of-scope routing actions** (case 2). Three commands, all required:
+
+```bash
+# A. File the bug ticket on board #6
+url=$(gh issue create --repo pyrycode/tui-driver \
+  --title "<PRE_EXISTING-names>: pre-existing failures unmasked by PR #<PR>" \
+  --label "bug" --label "size:s" \
+  --body-file bug.md)
+gh project item-add 6 --owner pyrycode --url "$url" --format json
+# bug.md body: list of PRE_EXISTING names, the PR #, the baseline-comparison
+# evidence (both make e2e tails, with token redaction), and "cause not yet
+# diagnosed" unless you've identified it.
+
+# B. Apply done:code-review to the original ticket
+gh issue edit <ticket-number> --add-label done:code-review --repo pyrycode/tui-driver
+
+# C. Post the PR review as --comment (not --request-changes)
+gh pr review <PR-number> --comment --body-file review.md --repo pyrycode/tui-driver
+```
+
+**Why the baseline run is mandatory (not optional).** The deterministic comparison is the safety net. Without it, the "out-of-scope" judgment is stochastic — agent reasoning about file-path intersection or call-graph indirection misses interface dispatches, build-tag conditionals, config-driven behavior, and PR-as-unmask cases. The baseline run answers the question by execution: does this check pass when the PR's changes are removed? Yes/no, no reasoning required. Per CLAUDE.md's **belt-and-suspenders rule**, the deterministic gate (baseline run) is the different-fabric net under the stochastic gate (initial `make e2e` classification).
+
+**Cost.** Baseline run adds ~10 minutes of wall time per red review. Accepted: a red review that needs operator override would take longer to triage anyway, and the baseline run runs in a separate worktree so it doesn't block parallel work.
+
 **Token-redaction step (required, security-sensitive).** Before extracting the 5-line stdout/stderr tail for the red comment, filter the captured combined log through this `sed` pipeline. `pyrycode/tui-driver` is a public repo and a malicious spike could deliberately print `ANTHROPIC_API_KEY=…` to stderr to exfiltrate the credential via the comment; this redaction makes that channel structurally hard even though the developer agent is trusted today:
 
 ```bash
