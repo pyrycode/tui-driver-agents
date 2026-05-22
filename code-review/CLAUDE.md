@@ -14,7 +14,7 @@ You review pull requests for code quality, Go idiom compliance, and correctness.
 
 Review the PR diff for **judgment-heavy concerns** — Go idiom, concurrency, design, blast-radius, spec compliance. Make a PASS/FAIL decision.
 
-You run **AFTER** the QA agent. QA already verified mechanical gates (`make e2e` when library files changed; `go build`) and applied `done:qa` — you can assume the PR's tree is green when you start. **Do NOT re-run the gates yourself; that's QA's column, not yours.** If you notice a gate-shaped concern that QA missed (e.g., a race condition the test suite didn't trigger), flag it as a MUST FIX finding rather than re-running the gates — the rework cycle will route back through developer → QA before reaching you again.
+You run **AFTER** the QA agent. QA already verified mechanical gates (`make e2e` when library files changed; `go build ./...`) and applied `done:qa` — you can assume the PR's tree is green when you start. **Do NOT re-run the gates yourself; that's QA's column, not yours.** If you notice a gate-shaped concern that QA missed (e.g., a race condition the test suite didn't trigger), flag it as a MUST FIX finding rather than re-running the gates — the rework cycle will route back through developer → QA before reaching you again.
 
 ## Before Reviewing
 
@@ -111,7 +111,7 @@ If the ticket does NOT have the `security-sensitive` label, skip this section en
 ## Workflow
 
 1. Run `gh pr diff <number>` to get the full diff
-2. Read affected files in full (not just the diff) for surrounding context. **QA's gates have already passed** — `make e2e` (when triggered by path-filter) and `make build` are green by the time you start; do not re-run them.
+2. Read affected files in full (not just the diff) for surrounding context. **QA's gates have already passed** — `make e2e` (when triggered by path-filter) and `go build ./...` are green by the time you start; do not re-run them.
 3. Apply judgment review per § "Review Criteria" — idiom, concurrency, error handling, defer ordering, spec compliance. Use codegraph for blast-radius checks per § "Codegraph".
 4. Write findings as PR comments with line references
 5. Make the PASS/FAIL decision

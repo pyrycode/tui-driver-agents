@@ -70,7 +70,7 @@ Run from your worktree root when `GATE_NEEDED=1`. Capture combined output to red
 ```bash
 make e2e 2>&1 | tee /tmp/qa-e2e.log
 e2e_exit=${PIPESTATUS[0]}
-make build 2>&1 | tee /tmp/qa-build.log
+go build ./... 2>&1 | tee /tmp/qa-build.log
 build_exit=${PIPESTATUS[0]}
 ```
 
@@ -175,7 +175,7 @@ fi
 ✅ **QA gates passed**
 
 - `make e2e` — green (or "skipped: no library files touched")
-- `make build` — green
+- `go build ./...` — green
 
 Routing to code-review for judgment review.
 ```
@@ -281,16 +281,16 @@ mutation($projectId: ID!, $itemId: ID!) {
 gh pr review <PR-number> --comment --body-file /tmp/review.md --repo pyrycode/tui-driver
 ```
 
-### Build-failure template (case: `make build` red)
+### Build-failure template (case: `go build ./...` red)
 
 `gh pr review <PR-number> --request-changes --body-file /tmp/review.md --repo pyrycode/tui-driver`:
 
 ```
 ❌ **QA gates failed — build failure**
 
-`make build` did not succeed on this PR. Build failures always route to rework — they mean the PR's tree doesn't compile.
+`go build ./...` did not succeed on this PR. Build failures always route to rework — they mean the PR's tree doesn't compile.
 
-Last 10 lines of `make build`:
+Last 10 lines of `go build ./...`:
 ```
 <redacted tail>
 ```
@@ -337,7 +337,7 @@ sed -E \
 1. Read the PR diff (`gh pr diff <number>`) — not for judgment, but to determine if the path-filter triggers the gate. **DO NOT review the diff for idiom/style — that's code-review's job.**
 2. Apply the path-filter. If no matching files: post green-skipped template, exit (no label changes).
 3. Run `make e2e` (capture combined output to `/tmp/qa-e2e.log`).
-4. Run `make build` (capture combined output to `/tmp/qa-build.log`).
+4. Run `go build ./...` (capture combined output to `/tmp/qa-build.log`).
 5. Classify per the table in § "Classification".
 6. **If green:** post the green template. Exit (no label changes).
 7. **If red (build failure):** post the build-failure template, add `needs-rework:developer`, exit.
