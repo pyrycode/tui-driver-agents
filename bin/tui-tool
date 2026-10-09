@@ -1,0 +1,29 @@
+#!/bin/sh
+# Opt-in corpus and diagnostic tools, built against the sibling library checkout.
+set -eu
+SCRIPT_DIR="$(cd -P "$(dirname "$0")" && pwd)"
+MODULE="$SCRIPT_DIR/../tools/tui-driver"
+if [ -z "${TUIDRIVER_REPO_PATH:-}" ] && [ -d "$PWD/pkg/tuidriver" ]; then
+  LIBRARY="$PWD"
+else
+  LIBRARY="${TUIDRIVER_REPO_PATH:-${TARGET_REPO_PATH:-$SCRIPT_DIR/../../tui-driver}}"
+fi
+export TUIDRIVER_LIBRARY_ROOT="$(cd "$LIBRARY" && pwd -P)"
+export TUIDRIVER_TOOLS_ROOT="$(cd "$MODULE" && pwd -P)"
+tool=${1:?Usage: tui-tool TOOL [ARGS...]}
+shift
+case "$tool" in
+  test|corpus-label|corpus-sampler|corpus-replay|repro-permission-flake) ;;
+  *) echo "Unknown audit tool: $tool" >&2; exit 2 ;;
+esac
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/tui-tool.XXXXXX")
+trap 'rm -rf "$scratch"' EXIT HUP INT TERM
+(cd "$scratch" && env -u GOWORK go work init "$TUIDRIVER_TOOLS_ROOT" "$TUIDRIVER_LIBRARY_ROOT")
+export GOWORK="$scratch/go.work"
+if [ "$tool" = test ]; then
+  cd "$MODULE"
+  go test -race -count=1 ./... "$@"
+  exit
+fi
+(cd "$MODULE" && go build -o "$scratch/tool" "./cmd/$tool")
+"$scratch/tool" "$@"
