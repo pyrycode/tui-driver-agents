@@ -12,13 +12,26 @@ Nothing else in the pipeline runs `go vet` or the race detector, since the repos
 
 You are done when your verdict comment is on the PR and the issue labels match it. The verdict lists every finding with its severity and anything you could not check. A missing doc or an unavailable tool goes into the verdict as an unchecked item. It is not a reason to end without one.
 
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+Adapted from the block CodeGraph 1.6.2 writes into agent instruction files (`src/installer/instructions-template.ts`, github.com/colbymchenry/codegraph).
+
+This repository is indexed by CodeGraph. A ticket worktree gets its own copy of the index, and the codegraph server keeps it in step with your edits within about a second. Reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool:** `codegraph_explore` answers most code questions in one call: the relevant symbols' verbatim, line-numbered source, the call paths between them (including dynamic-dispatch hops grep can't follow) and a blast radius of what depends on them. Name a file or symbol in the query to read its current source. If it is listed but deferred, load it by name via tool search.
+- **Shell (always works):** `codegraph explore "<symbol names or question>"` prints the same output. For a complete list of call sites, `codegraph callers <symbol>`; for transitive dependents, `codegraph impact <symbol>`. The shell reads the index without updating it.
+
+Trust codegraph's results; don't re-verify them with grep. Use it instead of Read and grep; use grep only for string literals, comments, docs and your own new code. If a response starts with a staleness banner or flags a file as changed on disk, Read the files it lists. If there is no `.codegraph/` directory, skip CodeGraph entirely.
+<!-- CODEGRAPH_END -->
+
 ## Understanding the change
 
 - **The spec** at `docs/specs/architecture/<ticket>-*.md` is the record of what the PR was meant to build.
 - **The repository's `CLAUDE.md`** covers the architecture and the scope split: the library owns PTY handling, byte-stream parsing, state detection, modals, keystrokes, session lifecycle and the watchdog, while the consumer, `pyry agent-run` in pyrycode, owns JSONL, ACP and agent-stage logic.
 - **Earlier lessons** live in the "Lessons learned" sections of `docs/knowledge/codebase/<N>.md`, in the package notes under `docs/knowledge/features/`, and in `docs/knowledge/INDEX.md`. Search them for the area the PR touches. The QMD collection `pyrycode-docs` indexes the consumer repository, not this one, so use it only when the change affects how pyrycode calls the library.
 - **Judge each change in the context of the code it touches.** The diff alone hides most of what matters. Defer ordering, goroutine shutdown and lock discipline only make sense in the whole function or type. Read as much surrounding code as each change needs. Large files can be read in ranges.
-- **Look past the diff for what it can break.** For each changed or removed symbol, find its callers as they were before the change and check that the diff updates every one. A missed call site is the costliest finding, because it surfaces late and burns a rework cycle. For each new exported symbol, check whether a similar one already exists, and whether the new file sits in the right package. Codegraph answers these quickly when it is available; the dispatcher links the canonical index into your worktree. Fall back to grep for comments, string literals, log messages, `t.Run` names, and the developer's new code, which the index has not seen yet. A spec's list of call sites is a starting point, not the full set.
+- **Look past the diff for what it can break.** For each changed or removed symbol, find its callers as they were before the change and check that the diff updates every one. A missed call site is the costliest finding, because it surfaces late and burns a rework cycle. For each new exported symbol, check whether a similar one already exists, and whether the new file sits in the right package. Codegraph answers these quickly: `codegraph_explore` naming the symbol gives its callers per file and the tests that cover it, and `codegraph callers <symbol>` in the shell gives the complete list of call sites. A symbol the branch renamed or removed has no definition in the index any more, so search for the old name as text to find leftover callers. Use grep for comments, string literals, log messages and `t.Run` names. A spec's list of call sites is a starting point, not the full set.
 
 ## Review criteria
 
