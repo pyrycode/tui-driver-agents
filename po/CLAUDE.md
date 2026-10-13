@@ -10,6 +10,16 @@ You **refine** tickets that humans have triaged into the Backlog column. You do 
 - **Evidence-Based Fix Selection.** Don't ship a defense for a failure mode that hasn't been observed. Has this failure actually happened? If no, defer. CLAUDE.md (~80% advisory) is cheap; code-level enforcement is expensive — escalate only on observed failures.
 - **Belt-and-Suspenders Means Different Fabric.** When pairing a stochastic agent rule with a safety net, the safety net must be deterministic code, not another stochastic agent.
 
+## Workflow authority
+
+Since 2026-10-13 the orchestrator's central database owns every ticket's workflow: board column, order, labels, open or closed state, blocked-by links and the comments the pipeline posts. The GitHub board and labels only display that state. They catch up within a publication cycle, about 30 seconds and longer when GitHub is slow. A direct edit on GitHub is overwritten and changes nothing the dispatcher schedules from.
+
+- Your `gh` commands and the pipeline helpers reach the orchestrator through the managed GitHub bridge your run starts with. Use them as these instructions describe. The bridge saves each workflow change centrally, and GitHub shows it afterwards.
+- Never route around the bridge. Do not set `GH_CONFIG_DIR`, `GH_TOKEN` or `GH_HOST`, use another login or token, call `api.github.com` with `curl`, or ask a person to move a card on the board.
+- Issue titles and bodies, sub-issue links, pull requests and code still live on GitHub. The orchestrator reads them back.
+- When a workflow command reports an error, read the ticket back before you retry: `gh issue view --repo pyrycode/tui-driver N --json labels,state,projectItems` shows what the orchestrator holds. The change may already be saved. Repeat only what is missing, and never post a comment again when it is already there.
+- A person changes workflow through the protected operator command, not on GitHub. If you need a change your run cannot make, say so in your result instead of working around it.
+
 ## GitHub API budget
 
 Every dispatcher, agent and interactive session shares one GitHub account and its 5000 GraphQL points an hour. When it runs out, every `gh` call in the pipeline fails until the hourly reset.
@@ -184,6 +194,8 @@ These ALWAYS produce ≥2 tickets, no exceptions:
 - **Cross-package coordination touching ≥3 files** — split by package boundary.
 - **Implementation AND broad test-fixture cascade** — if the change requires updating >5 test fixture literals (`&FakeFoo{...}`), split the type change from the fixture migration.
 - **Shared test infrastructure AND the tests that ride it** — when a ticket needs a new shared harness, a reusable fixture, or a mechanical migration across many test files, the infrastructure is its own ticket and the dependent test/fix tickets are wired natively blocked-by it. The trigger is reuse: infrastructure more than one ticket will use gets its own ticket; a fixture used by a single test stays inside that test's ticket. Boundary: a fix and its liveness test stay coupled in ONE ticket — the fails-on-main / passes-after-the-fix proof — and only the reusable scaffolding is split out. Evidence: pyrycode#860 and #861 were split by hand at triage after the bundled versions parked at the developer watchdog; pyrycode-mobile#527 and pyrycode-desktop#421/#420 were split at filing time and their spec tickets rode them cleanly. (Rule ticket: pyrycode-agents#32)
+
+Every board move, order change, blocker, label and close in a split changes orchestrator workflow through the managed GitHub bridge (see Workflow authority above). Until the next publication cycle the GitHub board can show a new child in Inbox or at the end of its column. Confirm each step by reading the child back with `gh issue view --repo pyrycode/tui-driver CHILD --json labels,state,projectItems`, not by looking at the board, and read back before repeating a step that reported an error. On 2026-10-13 the bridge saved both children of Mobile #1984 in Backlog, in the right place, while every `board-status` call reported a failure. Sub-issue links and issue bodies stay on GitHub.
 
 ### When to split
 

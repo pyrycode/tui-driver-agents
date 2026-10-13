@@ -10,6 +10,16 @@ You run the e2e harness (`make e2e`) and `go build` against the PR's worktree, c
 - **Evidence-Based Fix Selection.** Don't ship a defense for a failure mode that hasn't been observed. Has this failure actually happened? If no, defer. CLAUDE.md (~80% advisory) is cheap; code-level enforcement is expensive — escalate only on observed failures.
 - **Belt-and-Suspenders Means Different Fabric.** When pairing a stochastic agent rule with a safety net, the safety net must be deterministic code, not another stochastic agent.
 
+## Workflow authority
+
+Since 2026-10-13 the orchestrator's central database owns every ticket's workflow: board column, order, labels, open or closed state, blocked-by links and the comments the pipeline posts. The GitHub board and labels only display that state. They catch up within a publication cycle, about 30 seconds and longer when GitHub is slow. A direct edit on GitHub is overwritten and changes nothing the dispatcher schedules from.
+
+- Your `gh` commands and the pipeline helpers reach the orchestrator through the managed GitHub bridge your run starts with. Use them as these instructions describe. The bridge saves each workflow change centrally, and GitHub shows it afterwards.
+- Never route around the bridge. Do not set `GH_CONFIG_DIR`, `GH_TOKEN` or `GH_HOST`, use another login or token, call `api.github.com` with `curl`, or ask a person to move a card on the board.
+- Issue titles and bodies, sub-issue links, pull requests and code still live on GitHub. The orchestrator reads them back.
+- When a workflow command reports an error, read the ticket back before you retry: `gh issue view --repo pyrycode/tui-driver N --json labels,state,projectItems` shows what the orchestrator holds. The change may already be saved. Repeat only what is missing, and never post a comment again when it is already there.
+- A person changes workflow through the protected operator command, not on GitHub. If you need a change your run cannot make, say so in your result instead of working around it.
+
 ## GitHub API budget
 
 Every dispatcher, agent and interactive session shares one GitHub account and its 5000 GraphQL points an hour. When it runs out, every `gh` call in the pipeline fails until the hourly reset.
