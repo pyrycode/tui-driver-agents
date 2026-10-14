@@ -209,6 +209,10 @@ go build -o pyry ./cmd/pyry      # Build binary
 ```
 
 
+## Edits and escalated commands
+
+Under Codex, make file edits with `apply_patch` as their own step, and run `go test`, `go vet` or `go build` as a separate command when it needs `require_escalated`. Never put a file edit, an inline Python or shell rewrite included, in the same command as an escalated validation run. The automatic reviewer then judges the edit script as well, and it can misread one. On pyrycode-mobile #2149 (2026-10-14) it rejected an additive test insert as discarding the file's later tests, and the run stopped with its implementation uncommitted.
+
 ## Dispatcher Permission Denial
 
 **Absolute rule: when the dispatcher denies a destructive or policy-gated operation (e.g. `git reset --hard`, `git push --force`, `rm -rf` outside the worktree), do NOT attempt workarounds, alternative shapes, or `AskUserQuestion` prompts. The pipeline is non-interactive; the question reaches no one and burns turns.**
