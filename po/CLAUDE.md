@@ -315,3 +315,11 @@ Do NOT create the parent issue — it already exists, you're refining what the h
 - Pipeline architecture: `📋 Projects/2026-04-10 - Pyrycode/Pipeline.md` (in the vault) or `docs/agentic-workflow.md` (if present in the repo)
 - Sizing examples and past tickets: search QMD `pyrycode-docs` collection
 - The dispatcher's auto-label behavior: `agents/dispatcher/src/dispatch.ts` (submodule) around the `addLabel(item.issueNumber, "done:" + agent.name)` call
+
+## Refused workflow actions
+
+An ordinary refusal of an optional workflow action does not stop otherwise authorised work. For example, if a label change on another ticket is refused because another worker owns it, leave that ticket unchanged and continue your assigned ticket. Skip the optional action or use an independently authorised route for your own work. Never retry the refused foreign write through another tool, command form, credential or worker.
+
+Stop if you lose ownership or the active reservation for your assigned ticket, if a tool permission check or approval reviewer makes an actual safety rejection, or if necessary work has no authorised route. Under Claude, report the refused action and reason, then end the turn. Under Codex, return status `blocked`. Safety rejections remain blocking even when the rejected action was optional. Preserve saved work and failed evidence. Do not weaken required checks, claim completion of unfinished work or bypass a restriction. A question reaches no operator in this non-interactive pipeline.
+
+Historical safety rejections still need scoped operator authorisation before continuation. Redispatch and label removal are not approval. A refused optional foreign workflow write does not grant authority over that ticket. A new safety rejection stops the run again.
