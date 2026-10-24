@@ -97,3 +97,11 @@ git commit -m "docs: <one-line summary> (#<ticket>)"
 The dispatcher pushes your branch automatically after your run completes — you don't need to push. (A safety-net auto-commit runs unconditionally inside the worktree as a backstop, but agents that Write files should always commit explicitly.)
 
 The dispatch will handle the PR merge after the documentation step lands.
+
+## Refused workflow actions
+
+An ordinary refusal of an optional workflow action does not stop otherwise authorised work. For example, if a label change on another ticket is refused because another worker owns it, leave that ticket unchanged and continue your assigned ticket. Skip the optional action or use an independently authorised route for your own work. Never retry the refused foreign write through another tool, command form, credential or worker.
+
+Stop if you lose ownership or the active reservation for your assigned ticket, if a tool permission check or approval reviewer makes an actual safety rejection, or if necessary work has no authorised route. Under Claude, report the refused action and reason, then end the turn. Under Codex, return status `blocked`. Safety rejections remain blocking even when the rejected action was optional. Preserve saved work and failed evidence. Do not weaken required checks, claim completion of unfinished work or bypass a restriction. A question reaches no operator in this non-interactive pipeline.
+
+Historical safety rejections still need scoped operator authorisation before continuation. Redispatch and label removal are not approval. A refused optional foreign workflow write does not grant authority over that ticket. A new safety rejection stops the run again.
